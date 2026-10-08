@@ -52,16 +52,19 @@ Store inputs under the Git-ignored `inputs/` directory:
 
 | Path | Required content |
 | --- | --- |
-| `inputs/base.apk` | A lawfully obtained Ricoh v1.1.4 base APK with the necessary rights for this use; exact SHA-256 below |
+| `inputs/base.apk` | A lawfully obtained Ricoh base APK with the necessary rights for this use, matching one of the pinned upstream assets below |
 | `inputs/apktool.jar` | Apktool 2.12.1 jar |
 | `inputs/luts/gfx-eterna-55-3d-lut-v110/33Grid/F-Log2/` | Extracted GFX ETERNA 55 v1.10 LUT package you have permission to use for this purpose |
 | `inputs/upstream/` | Pinned upstream source below |
 
-Required base APK SHA-256:
+Accepted base APK SHA-256 — the `PictureEffectPlus_Ricoh.apk` asset of an upstream release:
 
-```text
-80cb4a541f5f3dd49e8f53ffb1905048097fec17209fc9cb595a00681e65e8ea
-```
+| SHA-256 | Upstream release | Status |
+| --- | --- | --- |
+| `80cb4a541f5f3dd49e8f53ffb1905048097fec17209fc9cb595a00681e65e8ea` | v1.1.4 | camera-tested by the upstream author |
+| `34dcee1f7a2617de84369ac8eacee5ea3591d2b53f503c08db67fb2ae6b20cf8` | v1.8.0 | patches and builds cleanly; not hardware-verified by this project |
+
+Both are signed per-builder upstream binaries. Rebuilding upstream yourself yields a different hash and is rejected; use the published release asset.
 
 This is not a universal patch for arbitrary Picture Effect+ APKs. Stop on a hash mismatch. Pin the hook source:
 

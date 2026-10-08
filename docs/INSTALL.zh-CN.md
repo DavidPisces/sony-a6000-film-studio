@@ -52,16 +52,19 @@ Windows PowerShell 可运行 `py -3.12 -m venv .venv`，之后把本文的 `pyth
 
 | 路径 | 内容与核对 |
 | --- | --- |
-| `inputs/base.apk` | 已合法取得并获准用于该用途的 Ricoh v1.1.4 基础 APK；必须匹配下方 SHA-256 |
+| `inputs/base.apk` | 已合法取得并获准用于该用途的 Ricoh 基础 APK；必须匹配下方固定的上游资产之一 |
 | `inputs/apktool.jar` | Apktool 2.12.1 的 jar 文件 |
 | `inputs/luts/gfx-eterna-55-3d-lut-v110/33Grid/F-Log2/` | 经许可使用的 GFX ETERNA 55 v1.10 LUT 包解压后的目录 |
 | `inputs/upstream/` | 下方固定版本的上游源码 |
 
-基础 APK 的 SHA-256：
+可接受的基础 APK SHA-256 —— 上游 release 的 `PictureEffectPlus_Ricoh.apk` 资产：
 
-```text
-80cb4a541f5f3dd49e8f53ffb1905048097fec17209fc9cb595a00681e65e8ea
-```
+| SHA-256 | 上游版本 | 状态 |
+| --- | --- | --- |
+| `80cb4a541f5f3dd49e8f53ffb1905048097fec17209fc9cb595a00681e65e8ea` | v1.1.4 | 上游作者已实机验证 |
+| `34dcee1f7a2617de84369ac8eacee5ea3591d2b53f503c08db67fb2ae6b20cf8` | v1.8.0 | 可正常打补丁并构建；本项目未做实机验证 |
+
+两者都是各构建者自行签名的上游产物；自己重跑上游会得到不同哈希并被拒绝，请使用官方发布的 release 资产。
 
 这不是任意「照片效果+」APK 的通用补丁；哈希不匹配就停止。上游源码：
 

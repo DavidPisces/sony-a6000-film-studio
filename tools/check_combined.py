@@ -10,9 +10,12 @@ import xml.etree.ElementTree as ET
 from film_profiles import read_array, ricoh_profiles
 from filter_strength import STRENGTHS, blend_profile
 from filter_icons import verify_icons
+from raw_quality import (BASE_CONTROLLER, LABELS as RAW_QUALITY_LABELS,
+                         QUALITY_VALUES)
 
 ROOT = Path(__file__).resolve().parents[1]
 HOOK_PATH = 'smali/com/yuki/imaging/app/pictureeffectplus/shooting/camera/RicohHook.smali'
+QUALITY_PATH = 'smali/com/sony/imaging/app/base/shooting/camera/PictureQualityController.smali'
 
 
 def fields(text):
@@ -108,6 +111,24 @@ def main():
         assert body, method
         for preset_id in ids:
             assert '"' + preset_id + '"' in body[1], (method, preset_id)
+    # RAW support additions: Sony's query must survive and stay single-shot, the
+    # menu must carry the two values, and the hook must label both item IDs.
+    quality = next(e for e in menu.iter() if e.get('ItemId') == 'setPictureStorageFormat')
+    raw_entries = [e for e in quality if e.get('Value') in QUALITY_VALUES]
+    assert sorted(e.get('Value') for e in raw_entries) == sorted(QUALITY_VALUES), \
+        'RAW quality menu entries missing'
+    for entry in raw_entries:
+        assert entry.get('ConfigClass') == BASE_CONTROLLER, entry.get('ItemId')
+        assert entry.get('ExecType') == 'SET_VALUE', entry.get('ItemId')
+        assert entry.get('IconRes') and entry.get('SelectedIconRes'), entry.get('ItemId')
+    controller = (args.decoded/QUALITY_PATH).read_text()
+    assert controller.count('->filterQualityAvailability(Ljava/lang/String;Z)Z') == 1, \
+        'Expected exactly one injected availability override'
+    assert controller.count('AvailableInfo;->isAvailable([Ljava/lang/Object;)Z') == 1, \
+        "Sony's own availability query must remain in place"
+    assert 'filterQualityAvailability(Ljava/lang/String;Z)Z' in hook, 'Hook method missing'
+    for item_id in RAW_QUALITY_LABELS:
+        assert '"' + item_id + '"' in hook, item_id
     movie = (args.decoded/'smali/com/sony/imaging/app/base/shooting/movie/trigger/MovieRecStandbyStateKeyHandler.smali').read_text()
     assert 'pushedCenterKey()I' in movie and '"ApplicationTop"' in movie
     assert '->isMovieRecording()Z' in movie
@@ -136,6 +157,8 @@ def main():
         previous_fuji_arrays_unchanged=min(previous_count, 80) if previous_count else None,
         menu_and_lookup_ids_match=True, renamed_resources=True,
         distinct_filter_badges_checked=15,
+        raw_quality_values=sorted(QUALITY_VALUES), raw_quality_hook_present=True,
+        raw_quality_icon_confirmed=False,
         movie_standby_shortcut_present=True, hardware_verified=False,
     )
     (ROOT/'validation/combined-static.json').write_text(json.dumps(report, indent=2))

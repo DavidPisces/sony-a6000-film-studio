@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Original additions only; underlying third-party rights remain separate. See LICENSING.md and NOTICE.
-"""Reproducible local alpha patch of the verified Ricoh v1.1.4 APK.
+"""Reproducible local alpha patch of a pinned upstream Ricoh release APK.
 
-The input Sony-derived APK is supplied separately. No firmware is modified.
-The result uses a separate same-length package name and a private signing key.
+The input Sony-derived APK is supplied separately and must match one of the
+hashes in BASE_APKS. No firmware is modified. The result uses a separate
+same-length package name and a private signing key.
+
+Only the v1.1.4 asset was camera-tested by the upstream author; a v1.8.0 input
+builds and runs the same patch but is not hardware-verified here.
 """
 import argparse
 import copy
@@ -23,12 +27,23 @@ from film_profiles import EXPECTED_HOOK, combined_profiles
 from profile_loading import field_reference, empty_init, write_profile_holders
 from filter_icons import patch_icons
 from live_preview import patch_live_preview
+from raw_quality import (LABELS as RAW_QUALITY_LABELS, QUALITY_VALUES,
+                         patch_quality_controller, patch_quality_menu,
+                         quality_availability_method)
 
 OLD = 'com.sony.imaging.app.pictureeffectplus'
 NEW = 'com.yuki.imaging.app.pictureeffectplus'
 HOOK = 'L'+OLD.replace('.','/')+'/shooting/camera/RicohHook;'
 CTRL = 'L'+OLD.replace('.','/')+'/shooting/camera/PictureEffectPlusController;'
-EXPECTED = '80cb4a541f5f3dd49e8f53ffb1905048097fec17209fc9cb595a00681e65e8ea'
+# Upstream release assets this patch is built against, keyed by the SHA-256 of
+# `PictureEffectPlus_Ricoh.apk` from bonyback1/sony-pmca-ricoh-mod. The patch
+# reuses the input's resource table and rewrites smali by exact method shape, so
+# anything outside this list is rejected instead of being half-patched.
+# Only v1.1.4 was camera-tested by the upstream author.
+BASE_APKS = {
+    '80cb4a541f5f3dd49e8f53ffb1905048097fec17209fc9cb595a00681e65e8ea': 'v1.1.4',
+    '34dcee1f7a2617de84369ac8eacee5ea3591d2b53f503c08db67fb2ae6b20cf8': 'v1.8.0',
+}
 VERSION = '0.3.0-alpha'
 ANDROID_VERSION = '0.3a'
 APP_NAME = '胶片工坊'
@@ -66,6 +81,7 @@ def lookup_method(name, profiles, kind, movie=False):
         lines += ['    return-object v0',f'    :next_{i}']
     if kind in ('name', 'guide'):
         labels_map = {'ApplicationTop': ('胶片风格', '富士参考与理光风格；拍照和录像待机均可切换。')}
+        labels_map.update(RAW_QUALITY_LABELS)
         labels_map.update(STRENGTH_LABELS)
         if movie:
             labels_map.update(MOVIE_LABELS)
@@ -172,6 +188,10 @@ def patch_hook(path,profiles,upstream_hook,movie=False):
     apply=apply.replace('    :catch_0\n','    :fuji_failed\n    const/4 v0, 0x0\n    return v0\n\n    :catch_0\n')
     text=replace_method(text,'applyHook('+CTRL+'Landroid/util/Pair;Ljava/lang/String;)Z',apply)
     text+='\n'+preset_ids(profiles)+'\n'+movie_hook()+'\n'+strength_methods(HOOK,CTRL)+'\n'
+    # The pinned older upstream hook has no availability override. Never append a
+    # second copy if a supplied hook source already carries one.
+    if 'filterQualityAvailability' not in text:
+        text+='\n'+quality_availability_method(HOOK)+'\n'
     if movie:
         text+='\n'+movie_settings_log()+'\n'
     text=text.replace('"RicohHook"','"FujiHook"').replace('Ricoh preset','Fuji approximation')
@@ -441,8 +461,13 @@ def main():
     ap.add_argument('--movie',action='store_true',help='Enable experimental Sony movie path')
     args=ap.parse_args()
     root=Path(__file__).resolve().parents[1]
-    if hashlib.sha256(args.input.read_bytes()).hexdigest()!=EXPECTED:
-        raise SystemExit('Input hash mismatch: this patch requires the tested upstream v1.1.4 APK')
+    input_sha256=hashlib.sha256(args.input.read_bytes()).hexdigest()
+    if input_sha256 not in BASE_APKS:
+        accepted='; '.join(f'{v} {h}' for h,v in BASE_APKS.items())
+        raise SystemExit('Input hash mismatch: this patch requires a pinned upstream Ricoh release APK\n'
+                         f'  got      {input_sha256}\n'
+                         f'  accepted {accepted}\n'
+                         '  see docs/INSTALL.en.md for the download and rights notes')
     if hashlib.sha256(args.upstream_hook.read_bytes()).hexdigest()!=EXPECTED_HOOK:
         raise SystemExit('Hook hash mismatch: use the pinned upstream revision in the installation guide')
     if args.work.exists() and any(args.work.iterdir()):
@@ -456,6 +481,8 @@ def main():
     subprocess.run(['java','-jar',str(args.apktool),'d','-r','-f',str(args.input),'-o',str(args.work)],check=True)
     patch_hook(args.work/'smali'/OLD.replace('.','/')/'shooting/camera/RicohHook.smali',profiles,args.upstream_hook,args.movie)
     patch_menu(args.work,profiles)
+    patch_quality_menu(args.work)
+    patch_quality_controller(args.work,HOOK)
     patch_icons(args.work,profiles)
     if args.movie:patch_movie(args.work)
     patch_live_preview(args.work,profiles)
@@ -486,11 +513,15 @@ def main():
     metadata=dict(file=output.name,package=NEW,sha256=hashlib.sha256(output.read_bytes()).hexdigest(),
                   version=VERSION,movie_enabled=args.movie,
                   camera_tested=False,encoded_video_filter_verified=False,
-                  source_apk_sha256=EXPECTED,profiles=len(profiles),
+                  source_apk_sha256=input_sha256,
+                  source_upstream_version=BASE_APKS[input_sha256],
+                  profiles=len(profiles),
                   app_name=APP_NAME,android_version=ANDROID_VERSION,
                   profile_families={'fujifilm':10,'ricoh':5},
                   live_filter_preview=True,preview_debounce_ms=120,
                   unique_filter_icons=15,lazy_profile_holders=60,
+                  raw_quality_values=list(QUALITY_VALUES),
+                  raw_quality_hardware_verified=False,
                   startup_timing_measured=False)
     (root/'profiles/film_studio.json').write_text(json.dumps(dict(
         version=VERSION,presets=profiles),ensure_ascii=False,indent=2))
